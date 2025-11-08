@@ -6,7 +6,9 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="flow-java-adapter" />
+        <module name="flow-adapter" />
+        <module name="flow-kafka-plugin" />
+        <module name="flow-spring-plugin" />
       </profile>
     </annotationProcessing>
   </component>
