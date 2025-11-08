@@ -1,0 +1,14 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "Project builds a Java static call graph + endpoint/kafka detector. Keep framework-agnostic; parse annotations by name only; be robust to partial code."
+    }
+  ],
+  "references": [
+    "README.md",
+    "ARCHITECTURE.md",
+    "CONTEXT.md",
+    "ROADMAP.md"
+  ]
+}
