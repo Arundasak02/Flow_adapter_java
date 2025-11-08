@@ -1,0 +1,4 @@
+- JavaSourceScanner: method graph
+- SpringEndpointScanner: REST endpoints
+- KafkaScanner: Kafka producers/consumers
+- ConfigLoader: properties/yaml placeholder resolution
