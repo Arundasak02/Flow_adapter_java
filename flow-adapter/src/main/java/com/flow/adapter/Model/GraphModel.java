@@ -1,6 +1,8 @@
 package com.flow.adapter.Model;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class GraphModel {
@@ -22,13 +24,24 @@ public class GraphModel {
   }
 
   public TopicNode ensureTopic(String name) {
-    String id = "topic:" + name;
+    // Normalize name: callers might accidentally pass a name already prefixed with "topic:".
+    String cleanName = (name != null && name.startsWith("topic:")) ? name.substring(6) : name;
+    String id = "topic:" + cleanName;
     return topics.computeIfAbsent(id, k -> {
       TopicNode t = new TopicNode();
       t.id = id;
-      t.name = name;
+      t.name = cleanName;
       return t;
     });
+  }
+
+  // Helper to add messaging edges in a canonical way
+  public void addMessagingEdge(String fromMethodId, String toTopicId, String kind) {
+    MessagingEdge e = new MessagingEdge();
+    e.from = fromMethodId;
+    e.to = toTopicId;
+    e.kind = kind;
+    messaging.add(e);
   }
 
   public static class MethodNode {
@@ -38,7 +51,10 @@ public class GraphModel {
 
   public static class EndpointNode {
 
-    public String id, httpMethod, path, produces, consumes;
+    public String id, httpMethod, path;
+    // allow multiple media types
+    public java.util.List<String> produces;
+    public java.util.List<String> consumes;
   }
 
   public static class TopicNode {

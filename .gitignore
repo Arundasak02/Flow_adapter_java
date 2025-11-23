@@ -1,0 +1,38 @@
+# Maven target directories
+**/target/
+
+# IDE files
+*.iml
+/.idea/
+/.vscode/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+
+# Build artifacts
+**/*.jar
+**/*.war
+**/*.ear
+
+# Compiled classes and generated resources
+**/*.class
+**/generated-sources/
+**/generated-test-sources/
+**/maven-status/
+
+# Node / misc
+node_modules/
+
+# OS temp
+*.swp
+*~
+
+# Local configuration files
+local.properties
+
+# Ignore payment output produced by run-example (optional)
+/payment-service-graph.json
+

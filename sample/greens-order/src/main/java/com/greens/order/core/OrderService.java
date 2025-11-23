@@ -1,8 +1,16 @@
 package com.greens.order.core;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
 public class OrderService {
 
   private final PaymentService paymentService = new PaymentService();
+
+  @Autowired
+  private KafkaTemplate<String, String> kafkaTemplate;
 
   public String placeOrder(String id) {
     validateCart(id);
@@ -23,6 +31,6 @@ public class OrderService {
   }
 
   private void publishEvent(String id) {
-    new KafkaTemplateStub().send("${orders.topic}", id);
+    kafkaTemplate.send("orders.topic", id);
   }
 }

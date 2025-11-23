@@ -15,11 +15,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * Scans Java source files for Kafka-related annotations (KafkaListener, Input, Output)
+ * and records topic nodes and messaging edges into the GraphModel.
+ */
 public class KafkaScanner {
+
+  private static final Logger logger = LoggerFactory.getLogger(KafkaScanner.class);
 
   private static final Set<String> ANN = new HashSet<>(
       Arrays.asList("KafkaListener", "Input", "Output"));
@@ -30,8 +37,9 @@ public class KafkaScanner {
   }
 
   public void scanInto(GraphModel model, Path srcRoot) throws IOException {
-    Files.walk(srcRoot).filter(p -> p.toString().endsWith(".java"))
-        .forEach(p -> parseFile(model, p));
+    try (java.util.stream.Stream<java.nio.file.Path> stream = Files.walk(srcRoot)) {
+      stream.filter(p -> p.toString().endsWith(".java")).forEach(p -> parseFile(model, p));
+    }
   }
 
   private void parseFile(GraphModel model, Path file) {
@@ -41,7 +49,7 @@ public class KafkaScanner {
         for (MethodDeclaration md : cls.getMethods()) {
           Optional<AnnotationExpr> opt = md.getAnnotations().stream()
               .filter(a -> ANN.contains(a.getName().getIdentifier())).findFirst();
-          if (!opt.isPresent()) {
+          if (opt.isEmpty()) {
             continue;
           }
           AnnotationExpr ann = opt.get();
@@ -50,22 +58,23 @@ public class KafkaScanner {
             continue;
           }
           String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
-          String clsName =
-              pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
-          String mid = SignatureUtil.signatureOf(md);
-          String tid = "topic:" + topic;
-          GraphModel.TopicNode tn = model.ensureTopic(tid);
-          tn.id = tid;
-          tn.name = topic;
-          GraphModel.MessagingEdge edge = new GraphModel.MessagingEdge();
-          edge.from = mid;
-          edge.to = tid;
-          model.messaging.add(edge);
+          String clsName = pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
+          String sig = SignatureUtil.signatureOf(md);
+          String mid = clsName + "#" + sig;
+          GraphModel.TopicNode tn = model.ensureTopic(topic);
+          String kind = determineKind(ann.getName().getIdentifier());
+          // add a canonical messaging edge (method -> topic)
+          model.addMessagingEdge(mid, tn.id, kind);
         }
       });
     } catch (Exception e) {
-      System.err.println("Kafka fail: " + file + " -> " + e.getMessage());
+      logger.warn("Kafka scanner failed for file {}", file, e);
     }
+  }
+
+  private String determineKind(String annName) {
+    if (annName.equals("Output")) return "produces";
+    return "consumes"; // KafkaListener / Input -> consumes
   }
 
   private String extractTopic(AnnotationExpr ann) {

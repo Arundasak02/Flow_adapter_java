@@ -19,69 +19,15 @@
         <groupId>org.apache.maven.plugins</groupId>
         <version>3.11.0</version>
       </plugin>
-      <plugin>
-        <artifactId>maven-shade-plugin</artifactId>
-        <executions>
-          <execution>
-            <configuration>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
-              <outputFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</outputFile>
-              <transformers>
-                <transformer
-                  implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>${main.class}</mainClass>
-                </transformer>
-              </transformers>
-            </configuration>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <phase>package</phase>
-          </execution>
-        </executions>
-        <groupId>org.apache.maven.plugins</groupId>
-        <version>3.5.0</version>
-      </plugin>
     </plugins>
   </build>
   <dependencies>
-    <dependency>
-      <artifactId>javaparser-symbol-solver-core</artifactId>
-      <groupId>com.github.javaparser</groupId>
-      <version>${javaparser.version}</version>
-    </dependency>
-    <dependency>
-      <artifactId>jackson-databind</artifactId>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <version>2.20.1</version>
-    </dependency>
-    <dependency>
-      <artifactId>picocli</artifactId>
-      <groupId>info.picocli</groupId>
-      <version>4.7.7</version>
-    </dependency>
-    <dependency>
-      <artifactId>snakeyaml</artifactId>
-      <groupId>org.yaml</groupId>
-      <version>2.5</version>
-    </dependency>
-    <!-- SLF4J API -->
+    <!-- Keep only truly shared, lightweight dependencies in the parent -->
+    <!-- SLF4J API is shared across modules -->
     <dependency>
       <artifactId>slf4j-api</artifactId>
       <groupId>org.slf4j</groupId>
-      <version>2.1.0-alpha1</version>
-    </dependency>
-    <!-- Logback Classic Implementation -->
-    <dependency>
-      <artifactId>logback-classic</artifactId>
-      <groupId>ch.qos.logback</groupId>
-      <version>1.5.20</version>
-    </dependency>
-    <!-- Logback Core -->
-    <dependency>
-      <artifactId>logback-core</artifactId>
-      <groupId>ch.qos.logback</groupId>
-      <version>${logback.version}</version>
+      <version>${slf4j.version}</version>
     </dependency>
   </dependencies>
   <groupId>com.flow</groupId>
