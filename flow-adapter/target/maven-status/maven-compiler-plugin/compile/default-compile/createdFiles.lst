@@ -7,6 +7,7 @@ com/flow/adapter/util/ConfigLoader.class
 com/flow/adapter/Model/GraphModel$MessagingEdge.class
 com/flow/adapter/Model/GraphModel$TopicNode.class
 com/flow/adapter/scanners/SourceCodeAnalyzer.class
+com/flow/adapter/Model/SignatureNormalizer.class
 com/flow/adapter/Model/GraphModel$MethodNode.class
 com/flow/adapter/GraphExporterJson.class
 com/flow/adapter/Model/UnifiedGraphModel.class

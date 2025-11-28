@@ -101,5 +101,50 @@ public class UnifiedGraphModel {
     }
     return n;
   }
+
+  /**
+   * Create a CLASS node
+   */
+  public Node addClass(String className, String packageName, String moduleName) {
+    String id = packageName != null ? packageName + "." + className : className;
+    String displayName = className;
+    Node n = ensureNode(id, "CLASS", displayName);
+    n.data.put("className", className);
+    if (packageName != null) {
+      n.data.put("packageName", packageName);
+    }
+    if (moduleName != null) {
+      n.data.put("moduleName", moduleName);
+    }
+    return n;
+  }
+
+  /**
+   * Create a SERVICE node
+   */
+  public Node addService(String serviceName, String moduleName) {
+    String id = "service:" + serviceName;
+    Node n = ensureNode(id, "SERVICE", serviceName);
+    if (moduleName != null) {
+      n.data.put("moduleName", moduleName);
+    }
+    return n;
+  }
+
+  /**
+   * Add an edge from METHOD to CLASS
+   */
+  public void addMethodToClassEdge(String methodId, String classId) {
+    String edgeId = "e-method-class-" + edges.size();
+    addEdge(edgeId, methodId, classId, "DEFINES");
+  }
+
+  /**
+   * Add an edge from CLASS to SERVICE
+   */
+  public void addClassToServiceEdge(String classId, String serviceId) {
+    String edgeId = "e-class-service-" + edges.size();
+    addEdge(edgeId, classId, serviceId, "BELONGS_TO");
+  }
 }
 
