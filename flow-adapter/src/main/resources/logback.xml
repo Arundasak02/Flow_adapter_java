@@ -11,4 +11,9 @@
   <root level="info">
     <appender-ref ref="STDOUT"/>
   </root>
+
+  <!-- Debug logging for our components -->
+  <logger name="com.flow" level="debug"/>
+  <logger name="com.flow.adapter.util.ConfigLoader" level="debug"/>
+  <logger name="com.flow.plugin.kafka.KafkaScanner" level="debug"/>
 </configuration>

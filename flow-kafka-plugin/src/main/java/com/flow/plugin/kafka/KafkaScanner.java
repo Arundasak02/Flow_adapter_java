@@ -46,6 +46,7 @@ public class KafkaScanner {
     try {
       CompilationUnit cu = StaticJavaParser.parse(file);
       cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cls -> {
+        // Scan for @KafkaListener and similar annotations
         for (MethodDeclaration md : cls.getMethods()) {
           Optional<AnnotationExpr> opt = md.getAnnotations().stream()
               .filter(a -> ANN.contains(a.getName().getIdentifier())).findFirst();
@@ -57,6 +58,7 @@ public class KafkaScanner {
           if (topic.isEmpty()) {
             continue;
           }
+          logger.debug("Found Kafka listener in method {}: topic={}", md.getNameAsString(), topic);
           String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
           String clsName = pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
           String sig = SignatureUtil.signatureOf(md);
@@ -65,6 +67,39 @@ public class KafkaScanner {
           String kind = determineKind(ann.getName().getIdentifier());
           // add a canonical messaging edge (method -> topic)
           model.addMessagingEdge(mid, tn.id, kind);
+          logger.info("Added Kafka {} edge: {} -> {}", kind, mid, tn.id);
+        }
+
+        // Scan for kafkaTemplate.send(...) calls in method bodies (producers)
+        for (MethodDeclaration md : cls.getMethods()) {
+          String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+          String clsName = pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
+          String sig = SignatureUtil.signatureOf(md);
+          String mid = clsName + "#" + sig;
+
+          // find kafkaTemplate.send() calls
+          md.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).stream()
+              .filter(mce -> "send".equals(mce.getNameAsString()))
+              .filter(mce -> {
+                if (!mce.getScope().isPresent()) return false;
+                String scope = mce.getScope().get().toString();
+                // Match "kafkaTemplate" or "this.kafkaTemplate"
+                return scope.contains("kafkaTemplate");
+              })
+              .forEach(mce -> {
+                // Extract first argument as topic name
+                if (mce.getArguments().size() > 0) {
+                  String topicArg = mce.getArguments().get(0).toString();
+                  String topic = str(topicArg);
+                  logger.debug("Found kafkaTemplate.send() in method {}: topic={}", md.getNameAsString(), topic);
+                  if (!topic.isEmpty()) {
+                    GraphModel.TopicNode tn = model.ensureTopic(topic);
+                    // Producer: method sends to topic
+                    model.addMessagingEdge(mid, tn.id, "produces");
+                    logger.info("Added Kafka produces edge: {} -> {}", mid, tn.id);
+                  }
+                }
+              });
         }
       });
     } catch (Exception e) {

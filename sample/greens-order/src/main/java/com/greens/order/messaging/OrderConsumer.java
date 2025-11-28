@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderConsumer {
 
-  @KafkaListener(topics = {"orders.topic"})
+  @KafkaListener(topics = {"orders.v1"})
   public void onMessage(String payload) {
   }
 }

@@ -33,8 +33,8 @@ echo "Running scanner using $JAR"
 java -jar "$JAR" scan \
   --src sample/greens-order/src/main/java \
   --config sample/greens-order/src/main/resources \
-  --out "$DIR/payment-service-graph.json" \
+  --out "$DIR/flow.json" \
   --project payment-service-project
 
 echo "Scanner finished."
-echo "Output: $DIR/payment-service-graph.json"
+echo "Output: $DIR/flow.json"

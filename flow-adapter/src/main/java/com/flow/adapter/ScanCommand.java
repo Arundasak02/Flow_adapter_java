@@ -41,7 +41,7 @@ public class ScanCommand implements Runnable {
         p.enrich(model, srcRoot, config);
       }
 
-      Path outPath = out != null ? Paths.get(out) : Paths.get("target/graph.json");
+      Path outPath = out != null ? Paths.get(out) : Paths.get("flow.json");
       Files.createDirectories(outPath.getParent());
       new GraphExporterJson().write(model, outPath);
       System.out.println("Graph written to: " + outPath.toAbsolutePath());

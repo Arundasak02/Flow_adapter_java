@@ -31,9 +31,12 @@ public class ConfigLoader {
             .filter(Files::isRegularFile)
             .filter(p -> p.toString().endsWith(".properties"))
             .forEach(this::loadPropertiesFile);
+        logger.info("Loaded {} properties from {}", properties.size(), configPath);
       } catch (IOException e) {
         logger.warn("Error loading configuration from {}", configPath, e);
       }
+    } else {
+      logger.warn("Config path is null or not a directory: {}", configPath);
     }
   }
 
@@ -41,7 +44,13 @@ public class ConfigLoader {
     Properties props = new Properties();
     try (InputStream is = Files.newInputStream(file)) {
       props.load(is);
-      props.forEach((key, value) -> properties.put(key.toString(), value.toString()));
+      props.forEach((key, value) -> {
+        String keyStr = key.toString();
+        String valStr = value.toString();
+        properties.put(keyStr, valStr);
+        logger.debug("Loaded property: {} = {}", keyStr, valStr);
+      });
+      logger.info("Loaded {} properties from {}", props.size(), file);
     } catch (IOException e) {
       logger.warn("Error loading properties file {}", file, e);
     }

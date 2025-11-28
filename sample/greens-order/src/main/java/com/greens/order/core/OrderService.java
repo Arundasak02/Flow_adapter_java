@@ -31,6 +31,6 @@ public class OrderService {
   }
 
   private void publishEvent(String id) {
-    kafkaTemplate.send("orders.topic", id);
+    kafkaTemplate.send("orders.v1", id);
   }
 }
