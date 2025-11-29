@@ -18,62 +18,64 @@ import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Scans Java source files to build a graph model of methods and their calls. It uses JavaParser for
- * AST parsing and JavaSymbolSolver for symbol resolution.
- */
 public class JavaSourceScanner implements SourceCodeAnalyzer {
 
   private static final Logger logger = LoggerFactory.getLogger(JavaSourceScanner.class);
 
-  public JavaSourceScanner() {
-  }
-
-  /**
-   * Analyzes Java source code within a given root directory and populates a GraphModel.
-   *
-   * @param model   The GraphModel to populate with scanned data.
-   * @param srcRoot The root directory containing Java source files.
-   * @throws IOException If an I/O error occurs during file traversal.
-   */
   @Override
   public void analyze(GraphModel model, Path srcRoot) throws IOException {
-    // Set up the symbol solver for accurate type and method resolution
-    CombinedTypeSolver ts = new CombinedTypeSolver();
-    ts.add(new ReflectionTypeSolver());
-    ts.add(new JavaParserTypeSolver(srcRoot));
-    JavaSymbolSolver ss = new JavaSymbolSolver(ts);
+    configureParser(srcRoot);
+    MethodCallAnalyzer analyzer = new MethodCallAnalyzer();
+    scanJavaFiles(model, srcRoot, analyzer);
+  }
 
-    // Configure StaticJavaParser with the symbol resolver
-    ParserConfiguration parserConfiguration = new ParserConfiguration();
-    parserConfiguration.setSymbolResolver(ss);
-    StaticJavaParser.setConfiguration(parserConfiguration);
+  private void configureParser(Path srcRoot) {
+    CombinedTypeSolver solver = createTypeSolver(srcRoot);
+    ParserConfiguration config = new ParserConfiguration();
+    config.setSymbolResolver(new JavaSymbolSolver(solver));
+    StaticJavaParser.setConfiguration(config);
+  }
 
-    // Initialize the MethodCallAnalyzer to handle method call extraction
-    MethodCallAnalyzer methodCallAnalyzer = new MethodCallAnalyzer();
+  private CombinedTypeSolver createTypeSolver(Path srcRoot) {
+    CombinedTypeSolver solver = new CombinedTypeSolver();
+    solver.add(new ReflectionTypeSolver());
+    solver.add(new JavaParserTypeSolver(srcRoot));
+    return solver;
+  }
 
-    // Walk through all Java files in the source root and parse each one
+  private void scanJavaFiles(GraphModel model, Path srcRoot, MethodCallAnalyzer analyzer) throws IOException {
     try (Stream<Path> walk = Files.walk(srcRoot)) {
       walk.filter(p -> p.toString().endsWith(".java"))
-          .forEach(p -> parseFile(model, p, methodCallAnalyzer));
+          .forEach(p -> parseFile(model, p, analyzer));
     }
   }
 
-  private void parseFile(GraphModel model, Path file, MethodCallAnalyzer methodCallAnalyzer) {
+  private void parseFile(GraphModel model, Path file, MethodCallAnalyzer analyzer) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(file);
-      cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cls -> {
-        String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
-        String fqn =
-            pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
-        String module = PackageUtil.deriveModule(pkg);
-        for (MethodDeclaration md : cls.getMethods()) {
-          // Analyze each method for calls and populate the graph model
-          methodCallAnalyzer.analyze(model, cu, fqn, pkg, module, md);
-        }
-      });
+      processClasses(model, cu, analyzer);
     } catch (Exception e) {
       logger.error("Parse fail: {} -> {}", file, e.getMessage(), e);
     }
+  }
+
+  private void processClasses(GraphModel model, CompilationUnit cu, MethodCallAnalyzer analyzer) {
+    cu.findAll(ClassOrInterfaceDeclaration.class)
+        .forEach(cls -> processClass(model, cu, cls, analyzer));
+  }
+
+  private void processClass(GraphModel model, CompilationUnit cu, ClassOrInterfaceDeclaration cls, MethodCallAnalyzer analyzer) {
+    String pkg = extractPackage(cu);
+    String fqn = buildFqn(pkg, cls.getName().asString());
+    String module = PackageUtil.deriveModule(pkg);
+    cls.getMethods().forEach(md -> analyzer.analyze(model, cu, fqn, pkg, module, md));
+  }
+
+  private String extractPackage(CompilationUnit cu) {
+    return cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+  }
+
+  private String buildFqn(String pkg, String className) {
+    return pkg.isEmpty() ? className : pkg + "." + className;
   }
 }

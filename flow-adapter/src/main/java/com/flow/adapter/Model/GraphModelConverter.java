@@ -5,19 +5,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Converts legacy GraphModel to UnifiedGraphModel format.
- * This handles the transformation from the old separated format
- * (methods, endpoints, topics, calls, etc.) to the new unified format
- * (nodes and edges).
- *
- * Key normalizations:
- * 1. Normalizes method signatures (removes fully-qualified type names)
- * 2. Deduplicates method nodes with same normalized ID
- * 3. Adds CLASS and SERVICE nodes for better graph structure
- * 4. Fixes CONSUMES edge direction (from topic to method)
- * 5. Normalizes endpoint IDs to strict format
- */
 public class GraphModelConverter {
 
   private static final String CALL_EDGE_TYPE = "CALL";
@@ -28,187 +15,179 @@ public class GraphModelConverter {
   public static UnifiedGraphModel convert(GraphModel legacy) {
     UnifiedGraphModel unified = new UnifiedGraphModel(legacy.projectId);
 
-    // Track which normalized method IDs we've already processed (for deduplication)
-    Set<String> processedMethodIds = new HashSet<>();
+    Map<String, GraphModel.MethodNode> normalizedMethods = deduplicateMethods(legacy);
+    Map<String, String> classToServiceMap = addMethodNodes(unified, normalizedMethods);
+
+    addEndpointNodes(unified, legacy);
+    addTopicNodes(unified, legacy);
+    addClassAndServiceNodes(unified, classToServiceMap);
+
+    addCallEdges(unified, legacy);
+    addEndpointEdges(unified, legacy);
+    addMessagingEdges(unified, legacy);
+    addMethodToClassEdges(unified, normalizedMethods);
+
+    return unified;
+  }
+
+  private static Map<String, GraphModel.MethodNode> deduplicateMethods(GraphModel legacy) {
+    Set<String> processedIds = new HashSet<>();
     Map<String, GraphModel.MethodNode> normalizedMethods = new HashMap<>();
 
-    // Step 1: Normalize and deduplicate method nodes
     for (GraphModel.MethodNode method : legacy.methods.values()) {
       String normalizedId = SignatureNormalizer.createNormalizedMethodId(
-        method.className,
-        method.methodName,
-        method.signature
-      );
+          method.className, method.methodName, method.signature);
 
-      // Only process each normalized ID once (skip duplicates)
-      if (!processedMethodIds.contains(normalizedId)) {
+      if (!processedIds.contains(normalizedId)) {
         normalizedMethods.put(normalizedId, method);
-        processedMethodIds.add(normalizedId);
+        processedIds.add(normalizedId);
       }
     }
+    return normalizedMethods;
+  }
 
-    // Step 2: Add all normalized methods as nodes
+  private static Map<String, String> addMethodNodes(UnifiedGraphModel unified,
+                                                     Map<String, GraphModel.MethodNode> methods) {
     Map<String, String> classToServiceMap = new HashMap<>();
-    for (Map.Entry<String, GraphModel.MethodNode> entry : normalizedMethods.entrySet()) {
+
+    for (Map.Entry<String, GraphModel.MethodNode> entry : methods.entrySet()) {
       String normalizedId = entry.getKey();
       GraphModel.MethodNode method = entry.getValue();
 
-      String normalizedSig = method.signature != null ?
-        SignatureNormalizer.normalizeSignature(method.signature) : "";
+      ClassInfo classInfo = extractClassInfo(method);
+      String normalizedSig = normalizeSignature(method.signature);
 
-      // Fix legacy data: extract simple className and correct packageName
-      String className = method.className;
-      String packageName = method.packageName;
+      unified.addMethod(normalizedId, method.methodName, method.visibility,
+          classInfo.className, classInfo.packageName, method.moduleName, normalizedSig);
 
-      // Case 1: className is FQN like "com.greens.order.core.OrderService"
-      if (className != null && className.contains(".") && !className.startsWith("com.")) {
-        // className contains FQN, packageName is just the package
-        int lastDot = className.lastIndexOf('.');
-        packageName = className.substring(0, lastDot);
-        className = className.substring(lastDot + 1);
-      }
-      // Case 2: Both contain FQN (className="com.greens.order.core.OrderService", packageName="com.greens.order.core.OrderService")
-      else if (className != null && packageName != null && className.contains(".")) {
-        // Extract just the simple name from className
-        int lastDot = className.lastIndexOf('.');
-        packageName = className.substring(0, lastDot);
-        className = className.substring(lastDot + 1);
-      }
-
-      unified.addMethod(
-        normalizedId,
-        method.methodName,
-        method.visibility,
-        className,
-        packageName,
-        method.moduleName,
-        normalizedSig
-      );
-
-      // Track class-to-service mapping for later
-      if (className != null && packageName != null) {
-        String classId = packageName + "." + className;
-        String serviceName = SignatureNormalizer.deriveServiceName(method.moduleName, packageName);
+      if (classInfo.isValid()) {
+        String classId = classInfo.getFullClassName();
+        String serviceName = SignatureNormalizer.deriveServiceName(method.moduleName, classInfo.packageName);
         classToServiceMap.put(classId, serviceName);
       }
     }
+    return classToServiceMap;
+  }
 
-    // Step 3: Add all endpoints as nodes (normalized IDs)
+  private static ClassInfo extractClassInfo(GraphModel.MethodNode method) {
+    String className = method.className;
+    String packageName = method.packageName;
+
+    if (className != null && className.contains(".")) {
+      int lastDot = className.lastIndexOf('.');
+      packageName = className.substring(0, lastDot);
+      className = className.substring(lastDot + 1);
+    }
+
+    return new ClassInfo(className, packageName);
+  }
+
+  private static String normalizeSignature(String signature) {
+    return signature != null ? SignatureNormalizer.normalizeSignature(signature) : "";
+  }
+
+  private static void addEndpointNodes(UnifiedGraphModel unified, GraphModel legacy) {
     for (GraphModel.EndpointNode endpoint : legacy.endpoints.values()) {
-      String normalizedEndpointId = SignatureNormalizer.normalizeEndpointId(endpoint.httpMethod, endpoint.path);
-      Node n = unified.ensureNode(normalizedEndpointId, "ENDPOINT", endpoint.httpMethod + " " + endpoint.path);
+      String normalizedId = SignatureNormalizer.normalizeEndpointId(endpoint.httpMethod, endpoint.path);
+      Node n = unified.ensureNode(normalizedId, "ENDPOINT", endpoint.httpMethod + " " + endpoint.path);
       n.data.put("httpMethod", endpoint.httpMethod);
       n.data.put("path", endpoint.path);
-      if (endpoint.produces != null && !endpoint.produces.isEmpty()) {
-        n.data.put("produces", endpoint.produces);
-      }
-      if (endpoint.consumes != null && !endpoint.consumes.isEmpty()) {
-        n.data.put("consumes", endpoint.consumes);
-      }
+      addIfNotEmpty(n.data, "produces", endpoint.produces);
+      addIfNotEmpty(n.data, "consumes", endpoint.consumes);
     }
+  }
 
-    // Step 4: Add all topics as nodes (normalized IDs)
+  private static void addTopicNodes(UnifiedGraphModel unified, GraphModel legacy) {
     for (GraphModel.TopicNode topic : legacy.topics.values()) {
-      String normalizedTopicId = SignatureNormalizer.normalizeTopicId(topic.id);
-      Node n = unified.ensureNode(normalizedTopicId, "TOPIC", topic.name);
+      String normalizedId = SignatureNormalizer.normalizeTopicId(topic.id);
+      unified.ensureNode(normalizedId, "TOPIC", topic.name);
     }
+  }
 
-    // Step 5: Add CLASS nodes and CLASS->SERVICE edges
-    for (Map.Entry<String, String> classEntry : classToServiceMap.entrySet()) {
-      String classId = classEntry.getKey();  // e.g., "com.greens.order.core.OrderService"
-      String serviceName = classEntry.getValue();
+  private static void addClassAndServiceNodes(UnifiedGraphModel unified, Map<String, String> classToServiceMap) {
+    for (Map.Entry<String, String> entry : classToServiceMap.entrySet()) {
+      String classId = entry.getKey();
+      String serviceName = entry.getValue();
 
-      // Extract simple className from classId (after last dot only)
-      int lastDot = classId.lastIndexOf('.');
-      String packageName = lastDot > 0 ? classId.substring(0, lastDot) : "";
-      String className = lastDot > 0 ? classId.substring(lastDot + 1) : classId;
-
-      // Create CLASS node directly with correct classId (do not rebuild it)
-      Node classNode = unified.ensureNode(classId, "CLASS", className);
-      classNode.data.put("className", className);  // Just simple name, not FQN
-      classNode.data.put("packageName", packageName);  // Just the package, not duplicated
+      ClassInfo classInfo = ClassInfo.fromFullClassName(classId);
+      Node classNode = unified.ensureNode(classId, "CLASS", classInfo.className);
+      classNode.data.put("className", classInfo.className);
+      classNode.data.put("packageName", classInfo.packageName);
       classNode.data.put("moduleName", serviceName);
 
-      // Add SERVICE node
       String serviceId = "service:" + serviceName;
       unified.addService(serviceName, serviceName);
-
-      // Add CLASS->SERVICE edge
       unified.addClassToServiceEdge(classId, serviceId);
     }
+  }
 
-    // Step 6: Add method call edges (normalized IDs)
-    int callCounter = 0;
+  private static void addCallEdges(UnifiedGraphModel unified, GraphModel legacy) {
+    int counter = 0;
     for (GraphModel.CallEdge call : legacy.calls) {
-      callCounter++;
+      counter++;
       String normalizedFrom = normalizeMethodIdInEdge(call.from);
       String normalizedTo = normalizeMethodIdInEdge(call.to);
-      String edgeId = "e-call-" + callCounter;
-      unified.addEdge(edgeId, normalizedFrom, normalizedTo, CALL_EDGE_TYPE);
+      unified.addEdge("e-call-" + counter, normalizedFrom, normalizedTo, CALL_EDGE_TYPE);
     }
+  }
 
-    // Step 7: Add endpoint edges (endpoint -> method with normalized IDs)
-    int endpointEdgeCounter = 0;
+  private static void addEndpointEdges(UnifiedGraphModel unified, GraphModel legacy) {
+    int counter = 0;
     for (GraphModel.EndpointEdge edge : legacy.endpointEdges) {
-      endpointEdgeCounter++;
+      counter++;
       String normalizedEndpointId = SignatureNormalizer.normalizeEndpointId(
-        // Extract httpMethod and path from endpoint ID
-        extractHttpMethodFromEndpointId(edge.fromEndpoint),
-        extractPathFromEndpointId(edge.fromEndpoint)
-      );
+          extractHttpMethodFromEndpointId(edge.fromEndpoint),
+          extractPathFromEndpointId(edge.fromEndpoint));
       String normalizedMethodId = normalizeMethodIdInEdge(edge.toMethod);
-      String edgeId = "e-endpoint-" + endpointEdgeCounter;
-      unified.addEdge(edgeId, normalizedEndpointId, normalizedMethodId, HANDLES_EDGE_TYPE);
+      unified.addEdge("e-endpoint-" + counter, normalizedEndpointId, normalizedMethodId, HANDLES_EDGE_TYPE);
     }
+  }
 
-    // Step 8: Add messaging edges (with corrected CONSUMES direction)
-    int messagingCounter = 0;
+  private static void addMessagingEdges(UnifiedGraphModel unified, GraphModel legacy) {
+    int counter = 0;
     for (GraphModel.MessagingEdge edge : legacy.messaging) {
-      messagingCounter++;
-      String edgeId = "e-" + edge.kind + "-" + messagingCounter;
+      counter++;
+      String edgeId = "e-" + edge.kind + "-" + counter;
 
       if ("produces".equals(edge.kind)) {
-        // PRODUCES: method -> topic
-        String normalizedFrom = normalizeMethodIdInEdge(edge.from);
-        String normalizedTo = SignatureNormalizer.normalizeTopicId(edge.to);
-        unified.addEdge(edgeId, normalizedFrom, normalizedTo, PRODUCES_EDGE_TYPE);
+        addProducesEdge(unified, edgeId, edge);
       } else if ("consumes".equals(edge.kind)) {
-        // CONSUMES: topic -> method
-        // Note: edge.from may contain method ID, edge.to contains topic
-        // We need to swap: topic should be FROM, method should be TO
-        String topicId = extractTopicNameFromMessagingEdge(edge.to);
-        String methodId = normalizeMethodIdInEdge(edge.from);
-        String normalizedTopic = SignatureNormalizer.normalizeTopicId(topicId);
-        unified.addEdge(edgeId, normalizedTopic, methodId, CONSUMES_EDGE_TYPE);
+        addConsumesEdge(unified, edgeId, edge);
       }
     }
+  }
 
-    // Step 9: Add METHOD->CLASS edges
-    for (Map.Entry<String, GraphModel.MethodNode> entry : normalizedMethods.entrySet()) {
+  private static void addProducesEdge(UnifiedGraphModel unified, String edgeId, GraphModel.MessagingEdge edge) {
+    String normalizedFrom = normalizeMethodIdInEdge(edge.from);
+    String normalizedTo = SignatureNormalizer.normalizeTopicId(edge.to);
+    unified.addEdge(edgeId, normalizedFrom, normalizedTo, PRODUCES_EDGE_TYPE);
+  }
+
+  private static void addConsumesEdge(UnifiedGraphModel unified, String edgeId, GraphModel.MessagingEdge edge) {
+    String topicId = extractTopicNameFromMessagingEdge(edge.to);
+    String methodId = normalizeMethodIdInEdge(edge.from);
+    String normalizedTopic = SignatureNormalizer.normalizeTopicId(topicId);
+    unified.addEdge(edgeId, normalizedTopic, methodId, CONSUMES_EDGE_TYPE);
+  }
+
+  private static void addMethodToClassEdges(UnifiedGraphModel unified, Map<String, GraphModel.MethodNode> methods) {
+    for (Map.Entry<String, GraphModel.MethodNode> entry : methods.entrySet()) {
       String methodId = entry.getKey();
-      GraphModel.MethodNode method = entry.getValue();
+      ClassInfo classInfo = extractClassInfo(entry.getValue());
 
-      // Use same normalization as Step 2
-      String className = method.className;
-      String packageName = method.packageName;
-
-      // Fix legacy data: extract simple className and correct packageName
-      if (className != null && className.contains(".")) {
-        int lastDot = className.lastIndexOf('.');
-        packageName = className.substring(0, lastDot);
-        className = className.substring(lastDot + 1);
-      }
-
-      if (className != null && packageName != null) {
-        String classId = packageName + "." + className;
-        // Only add DEFINES edge if the class node exists
+      if (classInfo.isValid()) {
+        String classId = classInfo.getFullClassName();
         if (unified.getNode(classId) != null) {
           unified.addMethodToClassEdge(methodId, classId);
         }
       }
     }
+  }
 
-    return unified;
+  private static void addIfNotEmpty(Map<String, Object> data, String key, java.util.List<String> values) {
+    if (values != null && !values.isEmpty()) {
+      data.put(key, values);
+    }
   }
 
   private static String normalizeMethodIdInEdge(String methodId) {
@@ -216,24 +195,16 @@ public class GraphModelConverter {
       return methodId;
     }
 
-    // Format: com.package.Class#method(types):returnType
     String[] parts = methodId.split("#", 2);
     if (parts.length == 2) {
       String classPath = parts[0];
       String methodPart = parts[1];
-
-      // Normalize the method part (remove FQN types)
       String normalizedMethod = SignatureNormalizer.normalizeSignature(methodPart);
-
       return classPath + "#" + normalizedMethod;
     }
-
     return methodId;
   }
 
-  /**
-   * Extract HTTP method from endpoint ID like "endpoint:POST /api/orders"
-   */
   private static String extractHttpMethodFromEndpointId(String endpointId) {
     if (endpointId == null || !endpointId.startsWith("endpoint:")) {
       return "GET";
@@ -256,12 +227,32 @@ public class GraphModelConverter {
     if (value == null) {
       return "";
     }
-    // If it already has topic: prefix, remove it
-    if (value.startsWith("topic:")) {
-      return value.substring(6);
+    return value.startsWith("topic:") ? value.substring(6) : value;
+  }
+
+  private static class ClassInfo {
+    final String className;
+    final String packageName;
+
+    ClassInfo(String className, String packageName) {
+      this.className = className;
+      this.packageName = packageName;
     }
-    // Otherwise return as-is (should be just the topic name)
-    return value;
+
+    static ClassInfo fromFullClassName(String fullClassName) {
+      int lastDot = fullClassName.lastIndexOf('.');
+      String packageName = lastDot > 0 ? fullClassName.substring(0, lastDot) : "";
+      String className = lastDot > 0 ? fullClassName.substring(lastDot + 1) : fullClassName;
+      return new ClassInfo(className, packageName);
+    }
+
+    boolean isValid() {
+      return className != null && packageName != null;
+    }
+
+    String getFullClassName() {
+      return packageName + "." + className;
+    }
   }
 }
 

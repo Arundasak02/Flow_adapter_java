@@ -23,9 +23,8 @@ import org.slf4j.LoggerFactory;
 public class KafkaScanner {
 
   private static final Logger logger = LoggerFactory.getLogger(KafkaScanner.class);
+  private static final Set<String> ANN = new HashSet<>(Arrays.asList("KafkaListener", "Input", "Output"));
 
-  private static final Set<String> ANN = new HashSet<>(
-      Arrays.asList("KafkaListener", "Input", "Output"));
   private final ConfigLoader cfg;
 
   public KafkaScanner(ConfigLoader cfg) {
@@ -41,102 +40,124 @@ public class KafkaScanner {
   private void parseFile(GraphModel model, Path file) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(file);
-      cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cls -> {
-        // Scan for @KafkaListener and similar annotations
-        for (MethodDeclaration md : cls.getMethods()) {
-          Optional<AnnotationExpr> opt = md.getAnnotations().stream()
-              .filter(a -> ANN.contains(a.getName().getIdentifier())).findFirst();
-          if (opt.isEmpty()) {
-            continue;
-          }
-          AnnotationExpr ann = opt.get();
-          String topic = extractTopic(ann);
-          if (topic.isEmpty()) {
-            continue;
-          }
-          logger.debug("Found Kafka listener in method {}: topic={}", md.getNameAsString(), topic);
-          String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
-          String clsName = pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
-          String sig = SignatureUtil.signatureOf(md);
-          String mid = clsName + "#" + sig;
-          GraphModel.TopicNode tn = model.ensureTopic(topic);
-          String kind = determineKind(ann.getName().getIdentifier());
-          // add a canonical messaging edge (method -> topic)
-          model.addMessagingEdge(mid, tn.id, kind);
-          logger.info("Added Kafka {} edge: {} -> {}", kind, mid, tn.id);
-        }
-
-        // Scan for kafkaTemplate.send(...) calls in method bodies (producers)
-        for (MethodDeclaration md : cls.getMethods()) {
-          String pkg = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
-          String clsName = pkg.isEmpty() ? cls.getName().asString() : pkg + "." + cls.getName().asString();
-          String sig = SignatureUtil.signatureOf(md);
-          String mid = clsName + "#" + sig;
-
-          // find kafkaTemplate.send() calls
-          md.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).stream()
-              .filter(mce -> "send".equals(mce.getNameAsString()))
-              .filter(mce -> {
-                if (!mce.getScope().isPresent()) return false;
-                String scope = mce.getScope().get().toString();
-                // Match "kafkaTemplate" or "this.kafkaTemplate"
-                return scope.contains("kafkaTemplate");
-              })
-              .forEach(mce -> {
-                // Extract first argument as topic name
-                if (mce.getArguments().size() > 0) {
-                  String topicArg = mce.getArguments().get(0).toString();
-                  String topic = str(topicArg);
-                  logger.debug("Found kafkaTemplate.send() in method {}: topic={}", md.getNameAsString(), topic);
-                  if (!topic.isEmpty()) {
-                    GraphModel.TopicNode tn = model.ensureTopic(topic);
-                    // Producer: method sends to topic
-                    model.addMessagingEdge(mid, tn.id, "produces");
-                    logger.info("Added Kafka produces edge: {} -> {}", mid, tn.id);
-                  }
-                }
-              });
-        }
-      });
+      cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cls -> processClass(model, cu, cls));
     } catch (Exception e) {
       logger.warn("Kafka scanner failed for file {}", file, e);
     }
   }
 
+  private void processClass(GraphModel model, CompilationUnit cu, ClassOrInterfaceDeclaration cls) {
+    String pkg = extractPackage(cu);
+    String className = buildClassName(pkg, cls.getName().asString());
+
+    cls.getMethods().forEach(md -> {
+      processKafkaAnnotations(model, md, className);
+      processKafkaTemplateCalls(model, md, className);
+    });
+  }
+
+  private void processKafkaAnnotations(GraphModel model, MethodDeclaration md, String className) {
+    findKafkaAnnotation(md).ifPresent(ann -> {
+      String topic = extractTopic(ann);
+      if (!topic.isEmpty()) {
+        addMessagingEdge(model, md, className, topic, determineKind(ann.getName().getIdentifier()));
+      }
+    });
+  }
+
+  private Optional<AnnotationExpr> findKafkaAnnotation(MethodDeclaration md) {
+    return md.getAnnotations().stream()
+        .filter(a -> ANN.contains(a.getName().getIdentifier()))
+        .findFirst();
+  }
+
+  private void processKafkaTemplateCalls(GraphModel model, MethodDeclaration md, String className) {
+    md.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).stream()
+        .filter(this::isKafkaTemplateSend)
+        .forEach(mce -> processKafkaSend(model, mce, md, className));
+  }
+
+  private boolean isKafkaTemplateSend(com.github.javaparser.ast.expr.MethodCallExpr mce) {
+    return "send".equals(mce.getNameAsString())
+        && mce.getScope().isPresent()
+        && mce.getScope().get().toString().contains("kafkaTemplate");
+  }
+
+  private void processKafkaSend(GraphModel model, com.github.javaparser.ast.expr.MethodCallExpr mce,
+                                 MethodDeclaration md, String className) {
+    if (mce.getArguments().isEmpty()) return;
+
+    String topicArg = mce.getArguments().get(0).toString();
+    String topic = str(topicArg);
+
+    if (!topic.isEmpty()) {
+      addMessagingEdge(model, md, className, topic, "produces");
+    }
+  }
+
+  private void addMessagingEdge(GraphModel model, MethodDeclaration md, String className,
+                                 String topic, String kind) {
+    String sig = SignatureUtil.signatureOf(md);
+    String methodId = className + "#" + sig;
+    GraphModel.TopicNode topicNode = model.ensureTopic(topic);
+    model.addMessagingEdge(methodId, topicNode.id, kind);
+    logger.info("Added Kafka {} edge: {} -> {}", kind, methodId, topicNode.id);
+  }
+
   private String determineKind(String annName) {
-    if (annName.equals("Output")) return "produces";
-    return "consumes"; // KafkaListener / Input -> consumes
+    return annName.equals("Output") ? "produces" : "consumes";
   }
 
   private String extractTopic(AnnotationExpr ann) {
     if (ann.isSingleMemberAnnotationExpr()) {
-      String v = ann.asSingleMemberAnnotationExpr().getMemberValue().toString();
-      return str(v);
+      return str(ann.asSingleMemberAnnotationExpr().getMemberValue().toString());
     }
     if (ann.isNormalAnnotationExpr()) {
-      for (MemberValuePair p : ann.asNormalAnnotationExpr().getPairs()) {
-        String k = p.getNameAsString();
-        if (k.equals("topics") || k.equals("value")) {
-          Expression val = p.getValue();
-          if (val.isStringLiteralExpr()) {
-            return str(val.asStringLiteralExpr().asString());
-          } else if (val.isArrayInitializerExpr()) {
-            Optional<Expression> fst = val.asArrayInitializerExpr().getValues().stream().findFirst();
-            if (fst.isPresent() && fst.get().isStringLiteralExpr()) {
-              return str(fst.get().asStringLiteralExpr().asString());
-            }
-          }
-        }
+      return extractTopicFromPairs(ann.asNormalAnnotationExpr().getPairs());
+    }
+    return "";
+  }
+
+  private String extractTopicFromPairs(java.util.List<MemberValuePair> pairs) {
+    for (MemberValuePair p : pairs) {
+      if (isTopicAttribute(p.getNameAsString())) {
+        String topic = extractTopicValue(p.getValue());
+        if (!topic.isEmpty()) return topic;
       }
     }
     return "";
   }
 
-  private String str(String raw) {
-    String s = raw;
-    if (s.startsWith("\"") && s.endsWith("\"")) {
-      s = s.substring(1, s.length() - 1);
+  private boolean isTopicAttribute(String name) {
+    return name.equals("topics") || name.equals("value");
+  }
+
+  private String extractTopicValue(Expression val) {
+    if (val.isStringLiteralExpr()) {
+      return str(val.asStringLiteralExpr().asString());
     }
+    if (val.isArrayInitializerExpr()) {
+      return val.asArrayInitializerExpr().getValues().stream()
+          .filter(Expression::isStringLiteralExpr)
+          .findFirst()
+          .map(e -> str(e.asStringLiteralExpr().asString()))
+          .orElse("");
+    }
+    return "";
+  }
+
+  private String extractPackage(CompilationUnit cu) {
+    return cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+  }
+
+  private String buildClassName(String pkg, String simpleName) {
+    return pkg.isEmpty() ? simpleName : pkg + "." + simpleName;
+  }
+
+  private String str(String raw) {
+    String s = raw.startsWith("\"") && raw.endsWith("\"")
+        ? raw.substring(1, raw.length() - 1)
+        : raw;
     return cfg != null ? cfg.resolvePlaceholders(s) : s;
   }
 }

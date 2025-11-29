@@ -13,57 +13,72 @@ import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Analyzes method calls within a Java CompilationUnit and populates a GraphModel. This class is
- * responsible for extracting information about called methods and creating call edges.
- */
 public class MethodCallAnalyzer {
 
   private static final Logger logger = LoggerFactory.getLogger(MethodCallAnalyzer.class);
 
-  public MethodCallAnalyzer() {
+  public void analyze(GraphModel model, CompilationUnit cu, String fqn, String pkg, String module, MethodDeclaration md) {
+    GraphModel.MethodNode node = createMethodNode(model, fqn, pkg, module, md);
+    processMethodCalls(model, cu, md, node.id);
   }
 
-  public void analyze(GraphModel model, CompilationUnit cu, String fqn, String pkg, String module,
-      MethodDeclaration md) {
+  private GraphModel.MethodNode createMethodNode(GraphModel model, String fqn, String pkg, String module, MethodDeclaration md) {
     String sig = SignatureUtil.signatureOf(md);
     String id = fqn + "#" + sig;
-    GraphModel.MethodNode n = model.ensureMethod(id);
-    n.id = id;
-    n.className = fqn;
-    n.methodName = md.getNameAsString();
-    n.signature = sig;
-    n.packageName = pkg;
-    n.moduleName = module;
-    n.visibility = VisibilityUtil.visibilityOf(md);
+    GraphModel.MethodNode node = model.ensureMethod(id);
+    node.id = id;
+    node.className = fqn;
+    node.methodName = md.getNameAsString();
+    node.signature = sig;
+    node.packageName = pkg;
+    node.moduleName = module;
+    node.visibility = VisibilityUtil.visibilityOf(md);
+    return node;
+  }
 
-    md.findAll(MethodCallExpr.class).forEach(call -> {
-      try {
-        ResolvedMethodDeclaration t = call.resolve();
-        String tClass = t.declaringType().getQualifiedName();
-        String tSig = SignatureUtil.signatureOf(t);
-        String tId = tClass + "#" + tSig;
-        GraphModel.MethodNode tn = model.ensureMethod(tId);
-        tn.id = tId;
-        tn.className = tClass;
-        tn.methodName = t.getName();
-        tn.signature = tSig;
-        int idx = tClass.lastIndexOf('.');
-        String p = idx > 0 ? tClass.substring(0, idx) : "";
-        tn.packageName = p;
-        tn.moduleName = PackageUtil.deriveModule(p);
-        tn.visibility = VisibilityUtil.visibilityOf(t);
-        GraphModel.CallEdge e = new GraphModel.CallEdge();
-        e.from = id;
-        e.to = tId;
-        model.calls.add(e);
-      } catch (UnsolvedSymbolException | MethodAmbiguityException ex) {
-        logger.warn("Could not resolve symbol or method ambiguity for call in {}: {}",
-            cu.getPrimaryTypeName().orElse("unknown"), ex.getMessage());
-      } catch (Exception ex) {
-        logger.error("Unexpected error while processing method call in {}: {}",
-            cu.getPrimaryTypeName().orElse("unknown"), ex.getMessage(), ex);
-      }
-    });
+  private void processMethodCalls(GraphModel model, CompilationUnit cu, MethodDeclaration md, String callerId) {
+    md.findAll(MethodCallExpr.class).forEach(call -> processMethodCall(model, cu, call, callerId));
+  }
+
+  private void processMethodCall(GraphModel model, CompilationUnit cu, MethodCallExpr call, String callerId) {
+    try {
+      ResolvedMethodDeclaration resolved = call.resolve();
+      GraphModel.MethodNode target = createTargetMethodNode(model, resolved);
+      addCallEdge(model, callerId, target.id);
+    } catch (UnsolvedSymbolException | MethodAmbiguityException ex) {
+      logger.warn("Could not resolve symbol or method ambiguity for call in {}: {}",
+          cu.getPrimaryTypeName().orElse("unknown"), ex.getMessage());
+    } catch (Exception ex) {
+      logger.error("Unexpected error while processing method call in {}: {}",
+          cu.getPrimaryTypeName().orElse("unknown"), ex.getMessage(), ex);
+    }
+  }
+
+  private GraphModel.MethodNode createTargetMethodNode(GraphModel model, ResolvedMethodDeclaration resolved) {
+    String className = resolved.declaringType().getQualifiedName();
+    String sig = SignatureUtil.signatureOf(resolved);
+    String id = className + "#" + sig;
+
+    GraphModel.MethodNode node = model.ensureMethod(id);
+    node.id = id;
+    node.className = className;
+    node.methodName = resolved.getName();
+    node.signature = sig;
+    node.packageName = extractPackage(className);
+    node.moduleName = PackageUtil.deriveModule(node.packageName);
+    node.visibility = VisibilityUtil.visibilityOf(resolved);
+    return node;
+  }
+
+  private String extractPackage(String className) {
+    int idx = className.lastIndexOf('.');
+    return idx > 0 ? className.substring(0, idx) : "";
+  }
+
+  private void addCallEdge(GraphModel model, String fromId, String toId) {
+    GraphModel.CallEdge edge = new GraphModel.CallEdge();
+    edge.from = fromId;
+    edge.to = toId;
+    model.calls.add(edge);
   }
 }
