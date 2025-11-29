@@ -59,20 +59,39 @@ public class GraphModelConverter {
       String normalizedSig = method.signature != null ?
         SignatureNormalizer.normalizeSignature(method.signature) : "";
 
+      // Fix legacy data: extract simple className and correct packageName
+      String className = method.className;
+      String packageName = method.packageName;
+
+      // Case 1: className is FQN like "com.greens.order.core.OrderService"
+      if (className != null && className.contains(".") && !className.startsWith("com.")) {
+        // className contains FQN, packageName is just the package
+        int lastDot = className.lastIndexOf('.');
+        packageName = className.substring(0, lastDot);
+        className = className.substring(lastDot + 1);
+      }
+      // Case 2: Both contain FQN (className="com.greens.order.core.OrderService", packageName="com.greens.order.core.OrderService")
+      else if (className != null && packageName != null && className.contains(".")) {
+        // Extract just the simple name from className
+        int lastDot = className.lastIndexOf('.');
+        packageName = className.substring(0, lastDot);
+        className = className.substring(lastDot + 1);
+      }
+
       unified.addMethod(
         normalizedId,
         method.methodName,
         method.visibility,
-        method.className,
-        method.packageName,
+        className,
+        packageName,
         method.moduleName,
         normalizedSig
       );
 
       // Track class-to-service mapping for later
-      if (method.className != null && method.packageName != null) {
-        String classId = method.packageName + "." + method.className;
-        String serviceName = SignatureNormalizer.deriveServiceName(method.moduleName, method.packageName);
+      if (className != null && packageName != null) {
+        String classId = packageName + "." + className;
+        String serviceName = SignatureNormalizer.deriveServiceName(method.moduleName, packageName);
         classToServiceMap.put(classId, serviceName);
       }
     }
@@ -99,15 +118,19 @@ public class GraphModelConverter {
 
     // Step 5: Add CLASS nodes and CLASS->SERVICE edges
     for (Map.Entry<String, String> classEntry : classToServiceMap.entrySet()) {
-      String classId = classEntry.getKey();
+      String classId = classEntry.getKey();  // e.g., "com.greens.order.core.OrderService"
       String serviceName = classEntry.getValue();
 
-      // Extract className and packageName from classId
+      // Extract simple className from classId (after last dot only)
       int lastDot = classId.lastIndexOf('.');
       String packageName = lastDot > 0 ? classId.substring(0, lastDot) : "";
       String className = lastDot > 0 ? classId.substring(lastDot + 1) : classId;
 
-      unified.addClass(className, packageName, serviceName);
+      // Create CLASS node directly with correct classId (do not rebuild it)
+      Node classNode = unified.ensureNode(classId, "CLASS", className);
+      classNode.data.put("className", className);  // Just simple name, not FQN
+      classNode.data.put("packageName", packageName);  // Just the package, not duplicated
+      classNode.data.put("moduleName", serviceName);
 
       // Add SERVICE node
       String serviceId = "service:" + serviceName;
@@ -153,10 +176,13 @@ public class GraphModelConverter {
         String normalizedTo = SignatureNormalizer.normalizeTopicId(edge.to);
         unified.addEdge(edgeId, normalizedFrom, normalizedTo, PRODUCES_EDGE_TYPE);
       } else if ("consumes".equals(edge.kind)) {
-        // CONSUMES: topic -> method (REVERSED!)
-        String normalizedTopic = SignatureNormalizer.normalizeTopicId(edge.from);
-        String normalizedMethod = normalizeMethodIdInEdge(edge.to);
-        unified.addEdge(edgeId, normalizedTopic, normalizedMethod, CONSUMES_EDGE_TYPE);
+        // CONSUMES: topic -> method
+        // Note: edge.from may contain method ID, edge.to contains topic
+        // We need to swap: topic should be FROM, method should be TO
+        String topicId = extractTopicNameFromMessagingEdge(edge.to);
+        String methodId = normalizeMethodIdInEdge(edge.from);
+        String normalizedTopic = SignatureNormalizer.normalizeTopicId(topicId);
+        unified.addEdge(edgeId, normalizedTopic, methodId, CONSUMES_EDGE_TYPE);
       }
     }
 
@@ -165,9 +191,23 @@ public class GraphModelConverter {
       String methodId = entry.getKey();
       GraphModel.MethodNode method = entry.getValue();
 
-      if (method.className != null && method.packageName != null) {
-        String classId = method.packageName + "." + method.className;
-        unified.addMethodToClassEdge(methodId, classId);
+      // Use same normalization as Step 2
+      String className = method.className;
+      String packageName = method.packageName;
+
+      // Fix legacy data: extract simple className and correct packageName
+      if (className != null && className.contains(".")) {
+        int lastDot = className.lastIndexOf('.');
+        packageName = className.substring(0, lastDot);
+        className = className.substring(lastDot + 1);
+      }
+
+      if (className != null && packageName != null) {
+        String classId = packageName + "." + className;
+        // Only add DEFINES edge if the class node exists
+        if (unified.getNode(classId) != null) {
+          unified.addMethodToClassEdge(methodId, classId);
+        }
       }
     }
 
@@ -219,6 +259,22 @@ public class GraphModelConverter {
     String withoutPrefix = endpointId.substring("endpoint:".length()).trim();
     String[] parts = withoutPrefix.split(" ", 2);
     return parts.length > 1 ? parts[1] : "/";
+  }
+
+  /**
+   * Extract topic name from a messaging edge value.
+   * May be in format "topic:orders.v1" or "orders.v1"
+   */
+  private static String extractTopicNameFromMessagingEdge(String value) {
+    if (value == null) {
+      return "";
+    }
+    // If it already has topic: prefix, remove it
+    if (value.startsWith("topic:")) {
+      return value.substring(6);
+    }
+    // Otherwise return as-is (should be just the topic name)
+    return value;
   }
 }
 
