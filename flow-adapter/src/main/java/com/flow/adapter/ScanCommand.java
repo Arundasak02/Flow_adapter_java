@@ -22,17 +22,21 @@ public class ScanCommand implements Runnable {
   @Option(names = "--project", required = true)
   private String projectId;
 
+  @Override
   public void run() {
     try {
       Path srcRoot = Paths.get(src);
       if (!Files.exists(srcRoot)) {
         throw new IllegalArgumentException("Missing src: " + srcRoot);
       }
+
       Path cfgPath = Paths.get(configDir != null ? configDir : "src/main/resources");
       ConfigLoader config = new ConfigLoader(cfgPath);
+
       GraphModel model = new GraphModel();
       model.projectId = projectId;
       model.schema = "gef:1.1";
+
       new JavaSourceScanner().analyze(model, srcRoot);
 
       ServiceLoader<FlowPlugin> plugins = ServiceLoader.load(FlowPlugin.class);
@@ -42,7 +46,11 @@ public class ScanCommand implements Runnable {
       }
 
       Path outPath = out != null ? Paths.get(out) : Paths.get("flow.json");
-      Files.createDirectories(outPath.getParent());
+      Path parent = outPath.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+
       new GraphExporterJson().write(model, outPath);
       System.out.println("Graph written to: " + outPath.toAbsolutePath());
     } catch (Exception e) {

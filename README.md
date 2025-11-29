@@ -6,7 +6,7 @@ A powerful multi-module Java application that scans Spring/Kafka projects and ex
 
 ```bash
 # Build and run the example scanner
-./run-example.sh
+./run.sh
 ```
 
 Output: `payment-service-graph.json`
@@ -135,7 +135,7 @@ mvn -T 1C -DskipTests clean package
 
 ### Run Scanner
 ```bash
-./run-example.sh
+./run.sh
 ```
 
 or manually:
