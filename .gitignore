@@ -7,11 +7,12 @@ pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
+**/dependency-reduced-pom.xml
 
 # IDE - IntelliJ/VS Code
 *.iml
-/.idea/
-/.vscode/
+.idea/
+.vscode/
 .project
 .classpath
 .settings/
