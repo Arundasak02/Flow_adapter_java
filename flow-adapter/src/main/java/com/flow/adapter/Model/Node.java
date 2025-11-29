@@ -3,10 +3,6 @@ package com.flow.adapter.Model;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Represents a unified node in the FLOW graph.
- * Node types: ENDPOINT, TOPIC, METHOD, PRIVATE_METHOD, CLASS, SERVICE
- */
 public class Node {
 
   public String id;

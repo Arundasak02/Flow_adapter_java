@@ -53,9 +53,6 @@ public class UnifiedGraphModel {
     addEdge(edgeId, from, to, type);
   }
 
-  /**
-   * Add an edge with explicit ID
-   */
   public void addEdge(String edgeId, String from, String to, String type) {
     Edge e = new Edge(edgeId, from, to, type);
     edges.add(e);
@@ -82,9 +79,6 @@ public class UnifiedGraphModel {
     return n;
   }
 
-  /**
-   * Create a METHOD node
-   */
   public Node addMethod(String methodId, String methodName, String visibility,
                         String className, String packageName, String moduleName, String signature) {
     String type = "private".equals(visibility) ? "PRIVATE_METHOD" : "METHOD";
@@ -139,9 +133,6 @@ public class UnifiedGraphModel {
     addEdge(edgeId, methodId, classId, "DEFINES");
   }
 
-  /**
-   * Add an edge from CLASS to SERVICE
-   */
   public void addClassToServiceEdge(String classId, String serviceId) {
     String edgeId = "e-class-service-" + edges.size();
     addEdge(edgeId, classId, serviceId, "BELONGS_TO");

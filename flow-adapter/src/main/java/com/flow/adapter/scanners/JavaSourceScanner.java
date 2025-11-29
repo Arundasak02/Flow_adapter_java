@@ -59,14 +59,6 @@ public class JavaSourceScanner implements SourceCodeAnalyzer {
     }
   }
 
-  /**
-   * Parses a single Java file, extracts class and method information, and delegates method call
-   * analysis to MethodCallAnalyzer.
-   *
-   * @param model              The GraphModel to populate.
-   * @param file               The Java source file to parse.
-   * @param methodCallAnalyzer The analyzer responsible for extracting method call details.
-   */
   private void parseFile(GraphModel model, Path file, MethodCallAnalyzer methodCallAnalyzer) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(file);

@@ -56,11 +56,6 @@ public class ConfigLoader {
     }
   }
 
-  /**
-   * Resolve placeholders of the form ${key} using loaded properties.
-   * If a placeholder cannot be resolved, the original placeholder text is preserved.
-   * If the whole input is a single unresolved placeholder, returns the empty string.
-   */
   public String resolvePlaceholders(String raw) {
     if (raw == null || raw.isEmpty()) {
       return raw;

@@ -25,9 +25,6 @@ public class GraphModelConverter {
   private static final String PRODUCES_EDGE_TYPE = "PRODUCES";
   private static final String CONSUMES_EDGE_TYPE = "CONSUMES";
 
-  /**
-   * Convert legacy GraphModel to unified UnifiedGraphModel
-   */
   public static UnifiedGraphModel convert(GraphModel legacy) {
     UnifiedGraphModel unified = new UnifiedGraphModel(legacy.projectId);
 
@@ -214,9 +211,6 @@ public class GraphModelConverter {
     return unified;
   }
 
-  /**
-   * Normalize a method ID used in edges by applying signature normalization
-   */
   private static String normalizeMethodIdInEdge(String methodId) {
     if (methodId == null || !methodId.contains("#")) {
       return methodId;
@@ -249,9 +243,6 @@ public class GraphModelConverter {
     return parts.length > 0 ? parts[0] : "GET";
   }
 
-  /**
-   * Extract path from endpoint ID like "endpoint:POST /api/orders"
-   */
   private static String extractPathFromEndpointId(String endpointId) {
     if (endpointId == null || !endpointId.startsWith("endpoint:")) {
       return "/";
@@ -261,10 +252,6 @@ public class GraphModelConverter {
     return parts.length > 1 ? parts[1] : "/";
   }
 
-  /**
-   * Extract topic name from a messaging edge value.
-   * May be in format "topic:orders.v1" or "orders.v1"
-   */
   private static String extractTopicNameFromMessagingEdge(String value) {
     if (value == null) {
       return "";

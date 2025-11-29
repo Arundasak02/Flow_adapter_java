@@ -24,16 +24,6 @@ public class MethodCallAnalyzer {
   public MethodCallAnalyzer() {
   }
 
-  /**
-   * Analyzes a given MethodDeclaration for method calls and populates the GraphModel.
-   *
-   * @param model  The GraphModel to populate with method call data.
-   * @param cu     The CompilationUnit containing the method.
-   * @param fqn    The fully qualified name of the class containing the method.
-   * @param pkg    The package name of the class containing the method.
-   * @param module The module name derived from the package.
-   * @param md     The MethodDeclaration to analyze.
-   */
   public void analyze(GraphModel model, CompilationUnit cu, String fqn, String pkg, String module,
       MethodDeclaration md) {
     String sig = SignatureUtil.signatureOf(md);

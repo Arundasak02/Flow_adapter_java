@@ -31,9 +31,6 @@ public class GraphExporterJson {
     mapper.writeValue(out.toFile(), unified);
   }
 
-  /**
-   * Write unified graph model directly
-   */
   public void writeUnified(UnifiedGraphModel m, Path out) throws IOException {
     mapper.writeValue(out.toFile(), m);
   }

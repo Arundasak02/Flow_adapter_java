@@ -2,11 +2,6 @@ package com.flow.adapter.Model;
 
 import java.util.regex.Pattern;
 
-/**
- * Utility class to normalize method signatures and IDs to ensure consistency.
- * Removes fully-qualified type names and uses simple type names instead.
- * Example: "placeOrder(java.lang.String):java.lang.String" -> "placeOrder(String):String"
- */
 public class SignatureNormalizer {
 
   private static final Pattern FQN_PATTERN = Pattern.compile("\\b[a-z][a-z0-9]*(?:\\.[a-z0-9$_]+)*\\.([A-Z][a-zA-Z0-9$_]*)\\b");
@@ -27,11 +22,6 @@ public class SignatureNormalizer {
     return normalized;
   }
 
-  /**
-   * Create a normalized method ID.
-   * Format: "<fully.qualified.ClassName>#<normalizedMethodName>"
-   * Example: "com.greens.order.core.OrderService#placeOrder(String):String"
-   */
   public static String createNormalizedMethodId(String className, String methodName, String signature) {
     if (className == null || methodName == null) {
       return null;

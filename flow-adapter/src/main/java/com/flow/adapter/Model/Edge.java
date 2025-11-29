@@ -3,10 +3,6 @@ package com.flow.adapter.Model;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Represents a unified edge in the FLOW graph.
- * Edge types: CALL, HANDLES, PRODUCES, CONSUMES, ASYNC_HOP
- */
 public class Edge {
 
   public String id;

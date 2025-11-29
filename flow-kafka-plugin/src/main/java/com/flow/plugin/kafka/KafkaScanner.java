@@ -20,10 +20,6 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Scans Java source files for Kafka-related annotations (KafkaListener, Input, Output)
- * and records topic nodes and messaging edges into the GraphModel.
- */
 public class KafkaScanner {
 
   private static final Logger logger = LoggerFactory.getLogger(KafkaScanner.class);
